@@ -762,15 +762,32 @@ int main(int argc, char *argv[])
 	// First, download files named on command line.
 	//Fork a child for the download process
 	for (; argc > 1; argc--, argv++)
+	{
 		if ((t = start_download(tracker_task, argv[1])))
-			task_download(t, tracker_task);
+		{
+			pid_t child = fork();
+			if (child == 0)
+			{
+				task_download(t, tracker_task);
+				exit(0);
+			}
+			//put a check in case fork didn't occur properly
+		}
+	}
 
 	//Parallelize HERE for Task 1
 	//FORK THAT SHIT
 	//Fork child for the download process
 	// Then accept connections from other peers and upload files to them!
 	while ((t = task_listen(listen_task)))
-		task_upload(t);
-
+	{
+		pid_t child = fork();
+		if (child == 0)
+		{
+			task_upload(t);
+			exit(0);
+		}
+		//put a check in case fork didn't occur properly
+	}
 	return 0;
 }
