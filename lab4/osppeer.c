@@ -26,15 +26,15 @@
 static struct in_addr listen_addr;	// Define listening endpoint
 static int listen_port;
 
-
 /*****************************************************************************
  * TASK STRUCTURE
  * Holds all information relevant for a peer or tracker connection, including
  * a bounded buffer that simplifies reading from and writing to peers.
  */
 
-#define TASKBUFSIZ	4096	// Size of task_t::buf
-#define FILENAMESIZ	256	// Size of task_t::filename
+#define TASKBUFSIZ	16384	// Size of task_t::buf
+#define FILENAMESIZ	512	// Size of task_t::filename
+#define MAXFILESIZ	TASKBUFSIZ*512		// maximum file download size
 
 typedef enum tasktype {		// Which type of connection is this?
 	TASK_TRACKER,		// => Tracker connection
@@ -477,8 +477,13 @@ task_t *start_download(task_t *tracker_task, const char *filename)
 		error("* Error while allocating task");
 		goto exit;
 	}
-	//User provided string could easily overrun the buffer if larger than bounds of the buffer 
-	//Implement a check that either rejects the string or gives the nth size of the string and limit it to fit in bounds 
+	//check size of filename 
+	if (strlen(t->filename) > FILENAMESIZ)
+	{
+		error("* filename is too big\n");
+		goto exit;
+	}
+	
 	strcpy(t->filename, filename);
 
 	// add peers
@@ -572,6 +577,11 @@ static void task_download(task_t *t, task_t *tracker_task)
 			error("* Disk write error");
 			goto try_again;
 		}
+		if (t->total_written > MAXFILESIZ)
+		{
+			error("* downloaded file is too big\n");
+			goto try_again;
+		}
 	}
 
 	// Empty files are usually a symptom of some error.
@@ -635,6 +645,9 @@ static task_t *task_listen(task_t *listen_task)
 //
 static void task_upload(task_t *t)
 {
+	char path[PATH_MAX];
+	char dir[PATH_MAX];
+
 	assert(t->type == TASK_UPLOAD);
 	// First, read the request from the peer.
 	while (1) {
@@ -654,13 +667,30 @@ static void task_upload(task_t *t)
 	}
 	t->head = t->tail = 0;
 
-	//USE System Calls to check if user created file is in the test directory 
-	//Potential Code listed below 
-	/*
-		getcwdc()
-		realpath()
-		compare results of both strings 
-	*/
+	//check file name size
+	if (strlen(t->filename) > FILENAMESIZ)
+	{
+		error("* filename is too big\n");
+		goto exit;
+	}
+	//getting current working directory	
+	if (!getcwd(dir, PATH_MAX))
+	{
+		error("* current working directory is invalid\n");
+		goto exit;
+	}
+	//getting real path
+	if (!realpath(t->filename, path))
+	{
+		error("* file path is invalid\n");
+		goto exit;
+	}
+	//comparing if in the current directory
+	if (strncmp(dir, path, strlen(dir)))
+	{
+		error("* file %s not in the current working directory\n", t->filename);
+	}
+
 	t->disk_fd = open(t->filename, O_RDONLY);
 	if (t->disk_fd == -1) {
 		error("* Cannot open file %s", t->filename);
@@ -756,7 +786,9 @@ int main(int argc, char *argv[])
 	tracker_task = start_tracker(tracker_addr, tracker_port);
 	listen_task = start_listen();
 	register_files(tracker_task, myalias);
-
+	pid_t child;
+	task_t *prev = NULL;
+	
 	//Parallelize HERE for Task 1
 	//FORK THAT SHIT
 	// First, download files named on command line.
@@ -765,13 +797,15 @@ int main(int argc, char *argv[])
 	{
 		if ((t = start_download(tracker_task, argv[1])))
 		{
-			pid_t child = fork();
+			child = fork();
 			if (child == 0)
 			{
 				task_download(t, tracker_task);
 				exit(0);
 			}
 			//put a check in case fork didn't occur properly
+			else if(child < 0)
+				error("* forking error while downloading files\n");
 		}
 	}
 
@@ -781,13 +815,26 @@ int main(int argc, char *argv[])
 	// Then accept connections from other peers and upload files to them!
 	while ((t = task_listen(listen_task)))
 	{
-		pid_t child = fork();
+		if(prev == 0)
+		{
+			if(t->peer_fd == prev->peer_fd)
+			{
+				error("* preventing consecutive request\n");
+				prev = NULL;
+				continue;
+			}
+		}
+		child = fork();
 		if (child == 0)
 		{
 			task_upload(t);
 			exit(0);
 		}
 		//put a check in case fork didn't occur properly
+		else if (child < 0)
+			error("* forking error while uploading files\n");
+		else
+			prev = t;	// keep track of prev task in parent process
 	}
 	return 0;
 }

@@ -13,22 +13,33 @@
 # information you'd like us to know, please add it at the end of the file.
 
 # Partner 1
-Name: 
-Student ID: 
-Email: 
+Name: Ji Min Kim
+Student ID: 804255847
+Email: jkim0110@ucla.edu
 
 # Partner 2 (if you're working in a team)
-Name: 
-Student ID: 
-Email: 
+Name: Jason Jiang
+Student ID: 604409327
+Email: jason.jiang@ucla.edu
 
 # EXERCISE 1: What method you used to make your peer download and upload
 #    files in parallel?  (~1-3 sentences)
+We used forking to parallelize the download and upload files in the main function.
 
 # EXERCISE 2A: What conditions did you find and fix that would have
 #    triggered a buffer overrun bug?  (~1-3 sentences each)
+1. In function task_upload, we checked if the filename is bigger than FILENAMESIZ.
+2. In function start_download, we also checked for the size of the filename.
 
 # EXERCISE 2B: What other robustness problems did you fix?  (~1-3 sentences
 #    each)
+1. We fixed a potential buffer overflow bug in function task_upload. We implemented a simple check to see if the filename is bigger than FILENAMESIZ.
+2. To prevent another potential buffer overflow, in start_download, we also implemented a check to compare the size of the filename with the buffer cap.
+3. In the main function, we added a pointer called "prev" to keep track of the previous task and compare it to the next task that will be handled in order to check if it is the equivalent peer making a request.
+4. In function task_upload, we implemented a simple check to see if the upload request is in the current working directory. If not, the program is designed to exit.
+5. In function task_download, we implemented a check to compare the "total_written" bytes with the fixed size cap defined in MAXFILESIZ that we created at the top of the code.
+6. At the top of all the functions, we modified the value of the buffer "taskbufsiz" in order to accommodate for more peers without causing any overflow.
+
+
 
 # Add any other information you'd like us to know below this line.
